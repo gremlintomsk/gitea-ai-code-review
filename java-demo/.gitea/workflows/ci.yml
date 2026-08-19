@@ -1,0 +1,22 @@
+name: CI
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          # liberica: api.bell-sw.com is reachable from this network;
+          # adoptium (temurin) and azul (zulu) are not.
+          distribution: liberica
+          java-version: '21'
+      - name: Compile
+        run: |
+          mkdir -p out
+          javac -d out src/*.java
+      - name: Smoke run
+        run: java -cp out Main

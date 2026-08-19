@@ -1,0 +1,16 @@
+# act_runner config — the important part is container.network, so that job
+# containers land on the same docker network as gitea and can resolve
+# http://gitea:3000 (checkout, API calls with GITHUB_TOKEN).
+log:
+  level: info
+runner:
+  capacity: 1
+  timeout: 30m
+  labels:
+    - "ubuntu-latest:docker://node:20-bookworm"
+container:
+  network: gitea-net
+  privileged: false
+  force_pull: false
+cache:
+  enabled: true
