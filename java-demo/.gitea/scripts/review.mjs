@@ -80,8 +80,12 @@ const postComment = body => gitea(`/issues/${PR_NUMBER}/comments`, {
 });
 
 // Visible in the commits tab / branch protection: failure = there are blockers.
+// Commit statuses need an absolute URL; when Gitea is reached via an internal
+// host from CI (http://gitea:3000), REVIEW_PUBLIC_URL overrides the origin.
 async function setStatus(state, description) {
   if (!headSha) return;
+  const publicOrigin = (env.PUBLIC_URL || '').trim().replace(/\/+$/, '');
+  const targetUrl = publicOrigin ? `${publicOrigin}${repoPath}/pulls/${PR_NUMBER}` : pr.html_url;
   try {
     await gitea(`/statuses/${headSha}`, {
       method: 'POST',
@@ -89,7 +93,7 @@ async function setStatus(state, description) {
         state,
         context: STATUS_CONTEXT,
         description: String(description).slice(0, 140),
-        target_url: pr.html_url,
+        target_url: targetUrl,
       }),
     });
   } catch (error) {
@@ -121,6 +125,14 @@ async function upsertComment(body) {
 const pr = await giteaJson(`/pulls/${PR_NUMBER}`);
 const headSha = pr.head?.sha;
 const prTitle = pr.title || '';
+
+// File/line links are RELATIVE to whatever origin the PR is viewed from —
+// inside the job the API host is internal (`http://gitea:3000`), which would
+// produce dead links in the browser. Falls back to plain code paths when the
+// repo URL is not known.
+const repoPath = (pr.html_url || '')
+  .replace(/^[a-z]+:\/\/[^/]+/, '')
+  .replace(/\/pulls\/\d+\/?$/, '');
 
 if (prTitle.toLowerCase().includes('[skip-ai-review]')) {
   console.log('PR title contains [skip-ai-review] — skipping.');
@@ -430,11 +442,35 @@ const verdict =
   counts.blocker > 0 ? 'request_changes' :
   counts.major > 0 ? 'concerns' : 'approve';
 
+const SEVERITY_ICONS = { blocker: '🚨', major: '⚠️', minor: '💬' };
 const VERDICTS = {
-  request_changes: '🚨 Требуются правки',
-  concerns: '⚠️ Есть замечания',
-  approve: '✅ Можно мержить',
+  request_changes: '🚨 **Требуются правки**',
+  concerns: '⚠️ **Есть замечания**',
+  approve: '✅ **Можно мержить**',
 };
+
+const fileUrl = (path, line) =>
+  pr.html_url
+    ? `src/branch/${pr.head?.ref || 'main'}` +
+      `/${path.split('/').map(encodeURIComponent).join('/')}${line ? `#L${line}` : ''}`
+    : null;
+const linkFile = path => {
+  const url = fileUrl(path);
+  return url ? `[\`${path}\`](${url})` : `\`${path}\``;
+};
+const linkLine = (path, line) => {
+  const url = fileUrl(path, line);
+  return url ? `[L${line}](${url})` : `\`${path}:${line}\``;
+};
+
+const plural = (n, one, few, many) => {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return one;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
+  return many;
+};
+const fmtTokens = n => (n >= 1000 ? `~${(n / 1000).toFixed(1)}k` : `~${n}`);
 
 const shortList = (list, limit = 5) => {
   const head = list.slice(0, limit).map(f => `\`${f}\``).join(', ');
@@ -449,22 +485,56 @@ if (findingsTruncated) notes.push(`✂️ Показаны первые ${MAX_FI
 
 const summary = chunkResults.map(r => r.summary).filter(Boolean).join('\n\n') || '(модель не дала сводку)';
 
-const section = (icon, title, list) =>
-  list.length ? `### ${icon} ${title} (${list.length})\n` +
-    list.map(f =>
-      `- **\`${f.file}${f.line ? ':' + f.line : ''}\`** — ${f.message}` +
-      (f.suggestion ? `\n  💡 ${f.suggestion}` : ''),
-    ).join('\n') + '\n' : '';
+// Snap LLM line numbers to real changed (+) lines once, reuse for both the
+// summary links and the inline comments.
+const fileByPath = new Map(files.map(f => [f.path, f]));
+for (const finding of findings) {
+  const file = fileByPath.get(finding.file);
+  finding.anchorLine = finding.line > 0 && file ? snapToPlusLine(file, finding.line) : null;
+}
+
+// Group findings by file; entries that can't be anchored to a changed line
+// (file outside the diff, no line from the model) go to a loose section.
+const byFile = new Map();
+const looseFindings = [];
+for (const finding of findings) {
+  if (finding.anchorLine) {
+    if (!byFile.has(finding.file)) byFile.set(finding.file, []);
+    byFile.get(finding.file).push(finding);
+  } else {
+    looseFindings.push(finding);
+  }
+}
+
+const bullet = f =>
+  `- ${linkLine(f.file, f.anchorLine)} ${SEVERITY_ICONS[f.severity]} ${f.message}` +
+  (f.suggestion ? ` → ${f.suggestion}` : '');
+
+let fileSections = '';
+for (const [path, fileFindings] of byFile) {
+  fileSections += `#### 📄 ${linkFile(path)}\n${fileFindings.map(bullet).join('\n')}\n\n`;
+}
+if (looseFindings.length) {
+  fileSections += '#### 🧷 Без привязки к строке\n' +
+    looseFindings
+      .map(f =>
+        `- ${SEVERITY_ICONS[f.severity]} \`${f.file}${f.line ? ':' + f.line : ''}\` — ${f.message}` +
+        (f.suggestion ? ` → ${f.suggestion}` : ''),
+      )
+      .join('\n') + '\n\n';
+}
+
+const findingsLabel = findings.length
+  ? ` — ${findings.length} ${plural(findings.length, 'замечание', 'замечания', 'замечаний')}`
+  : '';
 
 const commentBody =
-  `${COMMENT_MARKER} (модель: \`${preferredModel}\`, файлов: ${files.length}, чанков: ${chunks.length}, токенов: ~${totalTokens})\n` +
-  (notes.length ? '\n' + notes.map(n => `> ${n}`).join('\n') + '\n' : '') +
-  `\n**Вердикт:** ${VERDICTS[verdict]}\n\n${summary}\n\n` +
-  section('🚨', 'Блокеры', findings.filter(f => f.severity === 'blocker')) +
-  section('⚠️', 'Важные', findings.filter(f => f.severity === 'major')) +
-  section('💬', 'Незначительные', findings.filter(f => f.severity === 'minor')) +
-  (findings.length ? '' : '_Замечаний нет._\n') +
-  `\n<sub>Комментарий обновляется при каждом пуше; \`[skip-ai-review]\` в заголовке PR отключает ревью.</sub>`;
+  `🤖 **AI Code Review**: ${VERDICTS[verdict]}${findingsLabel} · \`${preferredModel}\` · ${fmtTokens(totalTokens)} токенов\n\n` +
+  (notes.length ? notes.map(n => `> ${n}`).join('\n') + '\n\n' : '') +
+  `${summary}\n\n` +
+  fileSections +
+  (findings.length ? '' : '_Замечаний нет._\n\n') +
+  '<sub>Обновляется при каждом пуше · `[skip-ai-review]` в заголовке PR отключает ревью</sub>';
 
 await upsertComment(commentBody);
 console.log('Review comment posted.');
@@ -503,18 +573,14 @@ function snapToPlusLine(file, line) {
 
 if (REVIEW_INLINE !== 'false' && findings.length) {
   await deleteOldInlineReviews();
-  const fileByPath = new Map(files.map(f => [f.path, f]));
   const inlineComments = [];
   for (const finding of findings) {
     if (inlineComments.length >= MAX_INLINE) break;
-    const file = fileByPath.get(finding.file);
-    if (!file) continue;
-    const line = snapToPlusLine(file, finding.line);
-    if (!line) continue;
-    const label = { blocker: '🚨 BLOCKER', major: '⚠️ MAJOR', minor: '💬 MINOR' }[finding.severity];
+    if (!finding.anchorLine) continue;
+    const label = `${SEVERITY_ICONS[finding.severity]} **${finding.severity.toUpperCase()}**`;
     inlineComments.push({
       path: finding.file,
-      new_position: line,
+      new_position: finding.anchorLine,
       body: `🤖 ${label} — ${finding.message}` + (finding.suggestion ? `\n\n💡 ${finding.suggestion}` : ''),
     });
   }

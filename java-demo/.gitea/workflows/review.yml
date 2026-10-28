@@ -33,6 +33,9 @@ jobs:
           BASE_URL: ${{ vars.REVIEW_BASE_URL }}
           # 'false' → summary comment only, no inline review comments.
           REVIEW_INLINE: ${{ vars.REVIEW_INLINE }}
+          # Public origin for absolute links (e.g. commit status target_url)
+          # when CI reaches Gitea via an internal host; optional.
+          PUBLIC_URL: ${{ vars.REVIEW_PUBLIC_URL }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number || github.event.inputs.pr_number }}
         run: node .gitea/scripts/review.mjs
