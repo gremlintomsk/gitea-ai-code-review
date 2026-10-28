@@ -2,17 +2,37 @@ name: AI Code Review
 on:
   pull_request:
     types: [opened, synchronize, reopened]
+  # Manual re-run for any PR (e.g. after adding the API key):
+  # Actions → AI Code Review → Run workflow → PR number.
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to review'
+        required: true
+
+# A fresh push supersedes the review of the previous commit — don't let runs
+# pile up (and don't post two comments at once).
+concurrency:
+  group: review-${{ github.event.pull_request.number || github.event.inputs.pr_number }}
+  cancel-in-progress: true
 
 jobs:
   review:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - name: Review the PR diff with an LLM
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          # Free model on OpenRouter (deepseek :free tiers were retired); override via repo variable REVIEW_MODEL.
-          MODEL: ${{ vars.REVIEW_MODEL != '' && vars.REVIEW_MODEL || 'nvidia/nemotron-3-super-120b-a12b:free,openai/gpt-oss-20b:free,google/gemma-4-31b-it:free,z-ai/glm-5.2:free' }}
+          # Model chain default lives in review.mjs (single source of truth);
+          # override per repo via Actions variable REVIEW_MODEL (comma-separated).
+          MODEL: ${{ vars.REVIEW_MODEL }}
+          # Any OpenAI-compatible endpoint (OpenRouter by default, see review.mjs);
+          # override via Actions variable REVIEW_BASE_URL (Ollama, vLLM, ...).
+          BASE_URL: ${{ vars.REVIEW_BASE_URL }}
+          # 'false' → summary comment only, no inline review comments.
+          REVIEW_INLINE: ${{ vars.REVIEW_INLINE }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.inputs.pr_number }}
         run: node .gitea/scripts/review.mjs
