@@ -1,0 +1,14 @@
+name: lint
+on: [push, pull_request]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck setup.sh
+        run: shellcheck setup.sh
+      - name: syntax-check review.mjs
+        run: node --check java-demo/.gitea/scripts/review.mjs
+      - name: validate compose file
+        run: docker compose config -q
