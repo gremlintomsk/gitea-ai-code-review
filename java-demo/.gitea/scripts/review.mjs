@@ -431,9 +431,9 @@ const verdict =
   counts.major > 0 ? 'concerns' : 'approve';
 
 const VERDICTS = {
-  request_changes: '🔴 Требуются правки',
-  concerns: '🟡 Есть замечания',
-  approve: '🟢 Можно мержить',
+  request_changes: '🚨 Требуются правки',
+  concerns: '⚠️ Есть замечания',
+  approve: '✅ Можно мержить',
 };
 
 const shortList = (list, limit = 5) => {
@@ -460,9 +460,9 @@ const commentBody =
   `${COMMENT_MARKER} (модель: \`${preferredModel}\`, файлов: ${files.length}, чанков: ${chunks.length}, токенов: ~${totalTokens})\n` +
   (notes.length ? '\n' + notes.map(n => `> ${n}`).join('\n') + '\n' : '') +
   `\n**Вердикт:** ${VERDICTS[verdict]}\n\n${summary}\n\n` +
-  section('🔴', 'Блокеры', findings.filter(f => f.severity === 'blocker')) +
-  section('🟠', 'Важные', findings.filter(f => f.severity === 'major')) +
-  section('🔵', 'Незначительные', findings.filter(f => f.severity === 'minor')) +
+  section('🚨', 'Блокеры', findings.filter(f => f.severity === 'blocker')) +
+  section('⚠️', 'Важные', findings.filter(f => f.severity === 'major')) +
+  section('💬', 'Незначительные', findings.filter(f => f.severity === 'minor')) +
   (findings.length ? '' : '_Замечаний нет._\n') +
   `\n<sub>Комментарий обновляется при каждом пуше; \`[skip-ai-review]\` в заголовке PR отключает ревью.</sub>`;
 
@@ -511,7 +511,7 @@ if (REVIEW_INLINE !== 'false' && findings.length) {
     if (!file) continue;
     const line = snapToPlusLine(file, finding.line);
     if (!line) continue;
-    const label = { blocker: '🔴 BLOCKER', major: '🟠 MAJOR', minor: '🔵 MINOR' }[finding.severity];
+    const label = { blocker: '🚨 BLOCKER', major: '⚠️ MAJOR', minor: '💬 MINOR' }[finding.severity];
     inlineComments.push({
       path: finding.file,
       new_position: line,
