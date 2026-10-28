@@ -112,6 +112,8 @@ curl -u gitea_admin:gitea12345 -X PUT \
 | `REVIEW_MODEL` | цепочка моделей через запятую (дефолт зашит только в `review.mjs`) | `deepseek/deepseek-chat-v3-0324,openai/gpt-oss-20b:free` |
 | `REVIEW_BASE_URL` | любой OpenAI-совместимый эндпоинт — Ollama, vLLM, LM Studio (полностью оффлайн, без лимитов OpenRouter) | `http://ollama:11434/v1` |
 | `REVIEW_INLINE` | `false` — без инлайн-комментариев | `false` |
+| `REVIEW_FAIL_ON` | когда commit status красный: `blocker` (дефолт) — при любом блокере, `major` — при блокерах или важных, `never` — всегда зелёный (информационный) | `never` |
+| `REVIEW_PUBLIC_URL` | публичный origin для абсолютных ссылок (нужен статусу коммита), если CI ходит в Gitea по внутреннему хосту | `http://gitea.example.com` |
 
 Секрет `OPENROUTER_API_KEY` при использовании своего `REVIEW_BASE_URL` не нужен
 (для Ollama подойдет любое непустое значение-заглушка, например `dummy`).

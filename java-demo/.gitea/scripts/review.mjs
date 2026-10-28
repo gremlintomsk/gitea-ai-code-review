@@ -38,6 +38,10 @@ const {
 } = env;
 const ANSWER_LANG = str(env.ANSWER_LANG, 'Russian');
 const REVIEW_INLINE = str(env.REVIEW_INLINE, 'true');
+// Commit status threshold: 'blocker' (default) → failure on any blocker,
+// 'major' → failure on blockers+majors, 'never' → always success.
+// Override via Actions variable REVIEW_FAIL_ON.
+const FAIL_ON = str(env.FAIL_ON, 'blocker').toLowerCase();
 
 // Numeric knobs (env values are strings).
 const num = (value, fallback) => {
@@ -607,6 +611,10 @@ const statusDescription =
   verdict === 'request_changes' ? `blockers: ${counts.blocker}, majors: ${counts.major}` :
   verdict === 'concerns' ? `majors: ${counts.major}, minors: ${counts.minor}` :
   'no significant findings';
-await setStatus(verdict === 'request_changes' ? 'failure' : 'success', statusDescription);
+const passesThreshold =
+  FAIL_ON === 'never' ? true :
+  FAIL_ON === 'major' ? counts.blocker + counts.major === 0 :
+  counts.blocker === 0;
+await setStatus(passesThreshold ? 'success' : 'failure', statusDescription);
 
-console.log(`Done: verdict=${verdict}, findings=${findings.length} (${JSON.stringify(counts)}).`);
+console.log(`Done: verdict=${verdict}, findings=${findings.length} (${JSON.stringify(counts)}), status=${passesThreshold ? 'success' : 'failure'} (fail_on=${FAIL_ON}).`);

@@ -33,6 +33,8 @@ jobs:
           BASE_URL: ${{ vars.REVIEW_BASE_URL }}
           # 'false' → summary comment only, no inline review comments.
           REVIEW_INLINE: ${{ vars.REVIEW_INLINE }}
+          # Commit status threshold: blocker (default) | major | never.
+          FAIL_ON: ${{ vars.REVIEW_FAIL_ON }}
           # Public origin for absolute links (e.g. commit status target_url)
           # when CI reaches Gitea via an internal host; optional.
           PUBLIC_URL: ${{ vars.REVIEW_PUBLIC_URL }}
